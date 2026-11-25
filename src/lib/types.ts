@@ -1,0 +1,62 @@
+export const METALS = ["ทอง", "เงิน", "นาค", "อื่นๆ"] as const;
+export type Metal = (typeof METALS)[number];
+
+export interface ReceiptItem {
+  no: number | null;
+  metal_type: Metal;
+  item_name: string | null;
+  base_price: number | null;
+  plus_price: number | null;
+  buy_percent: number | null;
+  weight: number | null;
+  price_per_gram: number | null;
+  amount: number | null;
+}
+
+export interface ReceiptData {
+  doc_type?: string;
+  date: string | null;
+  customer_name: string | null;
+  phone: string | null;
+  total_weight: number | null;
+  subtotal: number | null;
+  other_amount: number | null;
+  grand_total: number | null;
+  payment_method: string | null;
+  payment_detail: string | null;
+  buyer_name: string | null;
+  notes: string | null;
+  items: ReceiptItem[];
+}
+
+export interface ReceiptRow extends Omit<ReceiptData, "items"> {
+  id: string;
+  created_at: string;
+  image_url: string | null;
+  receipt_items: ReceiptItem[];
+}
+
+export function classifyMetal(name: string | null | undefined): Metal {
+  const n = name ?? "";
+  if (n.includes("นาค")) return "นาค";
+  if (n.includes("เงิน")) return "เงิน";
+  if (n.includes("ทอง")) return "ทอง";
+  return "อื่นๆ";
+}
+
+export interface DailyMetalSummary {
+  weight: number;
+  amount: number;
+}
+
+export interface DailyClosingRecord {
+  date: string;
+  closed_at: string;
+  closed_by: string | null;
+  notes: string | null;
+  receipt_count: number;
+  total_weight: number;
+  grand_total: number;
+  metals: Record<Metal, DailyMetalSummary>;
+  receipt_ids: string[];
+}

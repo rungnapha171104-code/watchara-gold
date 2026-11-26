@@ -4,7 +4,7 @@ import { RESPONSE_SCHEMA, SYSTEM_PROMPT } from "@/lib/prompt";
 import { classifyMetal } from "@/lib/types";
 
 export const runtime = "nodejs";
-export const maxDuration = 120;
+export const maxDuration = 60;
 
 const DEFAULT_MODEL = "gemini-3.5-flash-lite";
 const DEFAULT_FALLBACK_MODELS = ["gemini-3.6-flash", "gemini-3.5-flash"];

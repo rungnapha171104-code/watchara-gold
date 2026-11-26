@@ -14,7 +14,7 @@ export interface ReceiptItem {
 }
 
 export interface ReceiptData {
-  doc_type?: string;
+  doc_type?: string | null;
   date: string | null;
   customer_name: string | null;
   phone: string | null;

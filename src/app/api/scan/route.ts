@@ -90,6 +90,15 @@ export async function POST(req: NextRequest) {
       ...i,
       metal_type: i.metal_type ?? classifyMetal(i.item_name as string),
     }));
+    // บิลแบบใหม่ไม่มีช่องน้ำหนักรวมแยก ให้รวมจากน้ำหนักแต่ละรายการอัตโนมัติ
+    if (data.total_weight == null && data.items.length > 0) {
+      const weights = data.items
+        .map((i: Record<string, unknown>) => i.weight)
+        .filter((w: unknown): w is number => typeof w === "number" && !Number.isNaN(w));
+      if (weights.length > 0) {
+        data.total_weight = Number(weights.reduce((a: number, b: number) => a + b, 0).toFixed(3));
+      }
+    }
     if (data.phone != null) data.phone = String(data.phone);
     return NextResponse.json(data);
   } catch (e) {

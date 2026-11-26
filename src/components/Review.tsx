@@ -41,7 +41,7 @@ export function ReviewForm({
   const setItem = (idx: number, patch: Partial<ReceiptItem>) =>
     setD((p) => ({ ...p, items: p.items.map((it, i) => (i === idx ? { ...it, ...patch } : it)) }));
   const warn = validateReceipt(d);
-  const text = (k: "customer_name" | "phone" | "payment_method" | "payment_detail" | "buyer_name" | "notes", label: string) => (
+  const text = (k: "doc_type" | "customer_name" | "phone" | "payment_method" | "payment_detail" | "buyer_name" | "notes", label: string) => (
     <label className="block text-xs text-gray-500">{label}
       <input className="input mt-0.5" value={d[k] ?? ""} onChange={(e) => set(k, e.target.value === "" ? null : e.target.value)} />
     </label>
@@ -60,12 +60,13 @@ export function ReviewForm({
         </div>
       )}
       <div className="card grid grid-cols-2 gap-3">
-        {text("customer_name", "ชื่อลูกค้า")}
+        <div className="col-span-2">{text("doc_type", "ประเภทเอกสาร")}</div>
+        {text("customer_name", "ชื่อลูกค้า / ผู้ขาย")}
         {text("phone", "เบอร์โทร")}
         <label className="block text-xs text-gray-500">วันที่
           <input type="date" className="input mt-0.5" value={d.date ?? ""} onChange={(e) => set("date", e.target.value || null)} />
         </label>
-        {text("buyer_name", "ผู้ซื้อ")}
+        {text("buyer_name", "ผู้ซื้อ / ผู้รับเงิน")}
       </div>
 
       <div className="card space-y-2">
@@ -76,7 +77,7 @@ export function ReviewForm({
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-xs">
             <thead className="text-gray-500">
-              <tr>{["#", "โลหะ", "รายการ", "ราคา", "ราคาบวก", "% ซื้อ", "น้ำหนัก", "ต่อกรัม", "จำนวนเงิน", ""].map((h) => <th key={h} className="px-1 py-1 text-left font-medium">{h}</th>)}</tr>
+              <tr>{["#", "โลหะ", "รายการ", "ราคา/หน่วย", "ราคาบวก", "% ซื้อ", "น้ำหนัก (ก.)", "ต่อกรัม", "จำนวนเงิน", ""].map((h) => <th key={h} className="px-1 py-1 text-left font-medium">{h}</th>)}</tr>
             </thead>
             <tbody>
               {d.items.map((it, i) => (

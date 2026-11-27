@@ -1,28 +1,24 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { CalendarCheck, Download, RotateCcw, Search } from "lucide-react";
+import { Building2, CalendarCheck, Download, FileSpreadsheet, RotateCcw, Search, Users } from "lucide-react";
 import { ImageViewer, ReviewForm } from "@/components/Review";
 import { useToast } from "@/components/Toast";
+import { DOC_CATEGORY_META, type DocCategory } from "@/lib/tax";
 import type { ReceiptData, ReceiptRow } from "@/lib/types";
 
 const fmt = (n: number | null | undefined, d = 2) =>
   n == null ? "-" : n.toLocaleString("th-TH", { maximumFractionDigits: d });
-const fmtList = (vals: (number | null | undefined)[], suffix = "") => {
-  const uniq = [...new Set(vals.filter((v): v is number => v != null))];
-  return uniq.length ? uniq.map((v) => fmt(v) + suffix).join(", ") : "-";
-};
-const METAL_FILTERS = ["", "ทอง", "เงิน", "นาค"];
 
 export default function Dashboard() {
   const toast = useToast();
   const [rows, setRows] = useState<ReceiptRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [scope, setScope] = useState<"active" | "all">("active");
+  const [category, setCategory] = useState<"all" | DocCategory>("all");
   const [q, setQ] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
-  const [metal, setMetal] = useState("");
   const [open, setOpen] = useState<ReceiptRow | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -34,12 +30,12 @@ export default function Dashboard() {
   const qs = useMemo(() => {
     const p = new URLSearchParams();
     if (scope === "active") p.set("scope", "active");
+    if (category !== "all") p.set("category", category);
     if (q) p.set("q", q);
     if (from) p.set("from", from);
     if (to) p.set("to", to);
-    if (metal) p.set("metal", metal);
     return p;
-  }, [scope, q, from, to, metal]);
+  }, [scope, category, q, from, to]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -56,18 +52,29 @@ export default function Dashboard() {
   }, [load]);
 
   const stats = useMemo(() => {
-    const m: Record<string, { w: number; a: number }> = {
-      ทอง: { w: 0, a: 0 },
-      เงิน: { w: 0, a: 0 },
-      นาค: { w: 0, a: 0 },
-    };
-    for (const r of rows)
-      for (const i of r.receipt_items)
-        if (m[i.metal_type]) {
-          m[i.metal_type].w += i.weight ?? 0;
-          m[i.metal_type].a += i.amount ?? 0;
-        }
-    return { m, total: rows.reduce((a, r) => a + (r.grand_total ?? 0), 0) };
+    let weight = 0;
+    let subtotal = 0;
+    let vat = 0;
+    let total = 0;
+    const customer = { count: 0, weight: 0, total: 0, vat: 0 };
+    const hq = { count: 0, weight: 0, total: 0, vat: 0 };
+
+    for (const r of rows) {
+      const w = r.total_weight ?? 0;
+      const sub = r.subtotal ?? r.grand_total ?? 0;
+      const v = r.vat_amount ?? r.other_amount ?? 0;
+      const tot = r.grand_total ?? 0;
+      weight += w;
+      subtotal += sub;
+      vat += v;
+      total += tot;
+      const bucket = r.doc_category === "hq" ? hq : customer;
+      bucket.count += 1;
+      bucket.weight += w;
+      bucket.total += tot;
+      bucket.vat += v;
+    }
+    return { weight, subtotal, vat, total, customer, hq };
   }, [rows]);
 
   const activeDates = useMemo(
@@ -112,7 +119,7 @@ export default function Dashboard() {
       setQ("");
       setFrom("");
       setTo("");
-      setMetal("");
+      setCategory("all");
       setScope("active");
       await load();
     } catch (e) {
@@ -122,44 +129,128 @@ export default function Dashboard() {
     }
   }
 
-  const exportUrl = (kind: string, all: boolean) => `/api/export?kind=${kind}&${all ? "all=1" : qs.toString()}`;
+  const taxExportUrl = (cat: DocCategory, allHistory = false) => {
+    const p = new URLSearchParams();
+    p.set("kind", "tax");
+    p.set("category", cat);
+    if (allHistory) {
+      p.set("all", "1");
+    } else {
+      if (scope === "active") p.set("scope", "active");
+      if (from) p.set("from", from);
+      if (to) p.set("to", to);
+      if (q) p.set("q", q);
+    }
+    return `/api/export?${p.toString()}`;
+  };
 
   return (
     <div className="space-y-4">
-      <div className="card flex flex-wrap items-center justify-between gap-3">
-        <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-1 text-xs">
-          <button
-            className={`rounded-md px-3 py-1.5 font-medium transition ${
-              scope === "active" ? "bg-white text-gold-600 shadow-sm" : "text-gray-600 hover:text-ink"
-            }`}
-            onClick={() => setScope("active")}
-          >
-            รอบปัจจุบัน (ยังไม่ปิดยอด)
-          </button>
-          <button
-            className={`rounded-md px-3 py-1.5 font-medium transition ${
-              scope === "all" ? "bg-white text-gold-600 shadow-sm" : "text-gray-600 hover:text-ink"
-            }`}
-            onClick={() => setScope("all")}
-          >
-            ประวัติทั้งหมด
-          </button>
+      <div className="card space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => setCategory("all")}
+              className={`rounded-lg border px-3.5 py-2 text-xs font-semibold transition ${
+                category === "all"
+                  ? "border-gold-500 bg-gold-50 text-gold-600"
+                  : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+              }`}
+            >
+              ทุกประเภท
+            </button>
+            <button
+              onClick={() => setCategory("customer")}
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-3.5 py-2 text-xs font-semibold transition ${
+                category === "customer"
+                  ? "border-emerald-500 bg-emerald-50 text-emerald-800"
+                  : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+              }`}
+            >
+              <Users size={14} /> ใบเสร็จลูกค้า (ซื้อเข้า)
+            </button>
+            <button
+              onClick={() => setCategory("hq")}
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-3.5 py-2 text-xs font-semibold transition ${
+                category === "hq"
+                  ? "border-blue-500 bg-blue-50 text-blue-800"
+                  : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+              }`}
+            >
+              <Building2 size={14} /> ส่งสำนักงานใหญ่ (ใบกำกับภาษี)
+            </button>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5 text-xs">
+              <button
+                className={`rounded-md px-2.5 py-1 font-medium transition ${
+                  scope === "active" ? "bg-white text-gold-600 shadow-sm" : "text-gray-600"
+                }`}
+                onClick={() => setScope("active")}
+              >
+                รอบปัจจุบัน
+              </button>
+              <button
+                className={`rounded-md px-2.5 py-1 font-medium transition ${
+                  scope === "all" ? "bg-white text-gold-600 shadow-sm" : "text-gray-600"
+                }`}
+                onClick={() => setScope("all")}
+              >
+                ประวัติทั้งหมด
+              </button>
+            </div>
+            <Link href="/daily" className="btn-ghost !py-1.5 text-xs">
+              <CalendarCheck size={14} /> สรุปรายวัน
+            </Link>
+            {scope === "active" && (
+              <button
+                className="btn-gold !py-1.5 text-xs"
+                disabled={loading || rows.length === 0}
+                onClick={() => setCloseModal(true)}
+              >
+                <RotateCcw size={14} /> จบวัน: บันทึกและรีเซ็ต
+              </button>
+            )}
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <Link href="/daily" className="btn-ghost !py-2">
-            <CalendarCheck size={15} /> ดูสรุปรายวันย้อนหลัง
-          </Link>
-          {scope === "active" && (
-            <button
-              className="btn-gold !py-2"
-              disabled={loading || rows.length === 0}
-              onClick={() => setCloseModal(true)}
+        {category === "all" && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div
+              onClick={() => setCategory("customer")}
+              className="cursor-pointer rounded-lg border border-emerald-200 bg-emerald-50/50 p-3 transition hover:bg-emerald-50"
             >
-              <RotateCcw size={15} /> จบวัน: บันทึกปิดยอดและรีเซ็ต
-            </button>
-          )}
-        </div>
+              <div className="flex items-center justify-between text-xs font-semibold text-emerald-800">
+                <span className="flex items-center gap-1.5">
+                  <Users size={14} /> ใบเสร็จลูกค้า (รับซื้อทองเก่าเข้า)
+                </span>
+                <span>{stats.customer.count} บิล</span>
+              </div>
+              <div className="mt-1.5 flex items-baseline justify-between">
+                <span className="text-lg font-bold text-emerald-900">{fmt(stats.customer.total)} บาท</span>
+                <span className="text-xs text-emerald-700">{fmt(stats.customer.weight)} ก.</span>
+              </div>
+            </div>
+            <div
+              onClick={() => setCategory("hq")}
+              className="cursor-pointer rounded-lg border border-blue-200 bg-blue-50/50 p-3 transition hover:bg-blue-50"
+            >
+              <div className="flex items-center justify-between text-xs font-semibold text-blue-800">
+                <span className="flex items-center gap-1.5">
+                  <Building2 size={14} /> ส่งสำนักงานใหญ่ (ใบกำกับภาษี)
+                </span>
+                <span>{stats.hq.count} บิล</span>
+              </div>
+              <div className="mt-1.5 flex items-baseline justify-between">
+                <span className="text-lg font-bold text-blue-900">{fmt(stats.hq.total)} บาท</span>
+                <span className="text-xs text-blue-700">
+                  {fmt(stats.hq.weight)} ก. · VAT {fmt(stats.hq.vat)}
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
@@ -168,25 +259,30 @@ export default function Dashboard() {
           <div className="text-2xl font-bold">{rows.length}</div>
         </div>
         <div className="card">
-          <div className="text-xs text-gray-500">ยอดรับซื้อรวม (บาท)</div>
+          <div className="text-xs text-gray-500">น้ำหนักรวม (กรัม)</div>
+          <div className="text-2xl font-bold">{fmt(stats.weight)}</div>
+        </div>
+        <div className="card">
+          <div className="text-xs text-gray-500">รวมเงินก่อน VAT</div>
+          <div className="text-xl font-bold">{fmt(stats.subtotal)}</div>
+        </div>
+        <div className="card">
+          <div className="text-xs text-gray-500">ภาษีมูลค่าเพิ่ม (VAT 7%)</div>
+          <div className="text-xl font-bold text-blue-700">{fmt(stats.vat)}</div>
+        </div>
+        <div className="card">
+          <div className="text-xs text-gray-500">ยอดเงินสุทธิ (บาท)</div>
           <div className="text-2xl font-bold text-gold-600">{fmt(stats.total)}</div>
         </div>
-        {Object.entries(stats.m).map(([k, v]) => (
-          <div key={k} className="card">
-            <div className="text-xs text-gray-500">{k}</div>
-            <div className="font-semibold">{fmt(v.w)} กรัม</div>
-            <div className="text-sm text-gray-600">{fmt(v.a)} บาท</div>
-          </div>
-        ))}
       </div>
 
       <div className="card flex flex-wrap items-end gap-3">
-        <label className="relative min-w-[180px] flex-1 text-xs text-gray-500">
+        <label className="relative min-w-[200px] flex-1 text-xs text-gray-500">
           ค้นหา
           <Search size={14} className="absolute bottom-2.5 left-2 text-gray-400" />
           <input
             className="input mt-0.5 !pl-7"
-            placeholder="ชื่อลูกค้า / เบอร์โทร"
+            placeholder="เลขที่บิล / ชื่อลูกค้า-ผู้ขาย / เลขผู้เสียภาษี / เบอร์โทร"
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
@@ -199,61 +295,60 @@ export default function Dashboard() {
           ถึง
           <input type="date" className="input mt-0.5" value={to} onChange={(e) => setTo(e.target.value)} />
         </label>
-        <label className="text-xs text-gray-500">
-          โลหะ
-          <select className="input mt-0.5" value={metal} onChange={(e) => setMetal(e.target.value)}>
-            {METAL_FILTERS.map((m) => (
-              <option key={m} value={m}>
-                {m || "ทั้งหมด"}
-              </option>
-            ))}
-          </select>
-        </label>
       </div>
 
-      <div className="card flex flex-wrap gap-2">
-        <span className="self-center text-xs text-gray-500">Export CSV:</span>
-        <a className="btn-ghost" href={exportUrl("items", false)}>
+      <div className="card flex flex-wrap items-center gap-2">
+        <span className="flex items-center gap-1 text-xs font-semibold text-gray-600">
+          <FileSpreadsheet size={14} /> ส่งออก CSV ยื่นภาษี:
+        </span>
+        <a
+          className="btn border border-emerald-300 bg-emerald-50 !py-1.5 text-xs text-emerald-900 hover:bg-emerald-100"
+          href={taxExportUrl("customer", false)}
+        >
+          <Download size={14} /> ฝั่งลูกค้า (ซื้อเข้า)
+        </a>
+        <a
+          className="btn border border-blue-300 bg-blue-50 !py-1.5 text-xs text-blue-900 hover:bg-blue-100"
+          href={taxExportUrl("hq", false)}
+        >
+          <Download size={14} /> ฝั่งส่งสำนักงานใหญ่ (ใบกำกับภาษี)
+        </a>
+        <a className="btn-ghost !py-1.5 text-xs" href={`/api/export?kind=items&${qs.toString()}`}>
           <Download size={14} /> รายรายการ (ตามหน้านี้)
         </a>
-        <a className="btn-ghost" href={exportUrl("summary", false)}>
-          <Download size={14} /> สรุปรายบิล (ตามหน้านี้)
-        </a>
-        <a className="btn-ghost" href={exportUrl("items", true)}>
-          <Download size={14} /> รายรายการ (ทั้งหมด)
-        </a>
-        <a className="btn-ghost" href={exportUrl("summary", true)}>
-          <Download size={14} /> สรุปรายบิล (ทั้งหมด)
+        <a className="btn-ghost !py-1.5 text-xs" href="/api/export?kind=tax&all=1">
+          <Download size={14} /> ยื่นภาษีทั้งหมด (รวม 2 ฝั่ง)
         </a>
       </div>
 
       <div className="card overflow-x-auto p-0">
-        <table className="w-full min-w-[820px] text-sm">
+        <table className="w-full min-w-[900px] text-sm">
           <thead className="bg-gold-50 text-left text-xs text-gray-600">
             <tr>
+              <th className="p-3">ประเภท</th>
               <th className="p-3">วันที่</th>
-              <th className="p-3">ลูกค้า</th>
-              <th className="p-3">เบอร์โทร</th>
-              <th className="p-3">โลหะ</th>
-              <th className="p-3 text-right">ราคาบวก</th>
-              <th className="p-3 text-right">% ซื้อ</th>
+              <th className="p-3">เลขที่บิล</th>
+              <th className="p-3">ลูกค้า / ผู้ขาย</th>
+              <th className="p-3">เลขผู้เสียภาษี</th>
               <th className="p-3 text-right">น้ำหนัก (ก.)</th>
-              <th className="p-3 text-right">ยอดรวม (บาท)</th>
+              <th className="p-3 text-right">ก่อน VAT</th>
+              <th className="p-3 text-right">VAT 7%</th>
+              <th className="p-3 text-right">ยอดสุทธิ (บาท)</th>
             </tr>
           </thead>
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={8} className="p-6 text-center text-gray-400">
+                <td colSpan={9} className="p-6 text-center text-gray-400">
                   กำลังโหลด...
                 </td>
               </tr>
             )}
             {!loading && rows.length === 0 && (
               <tr>
-                <td colSpan={8} className="p-6 text-center text-gray-400">
+                <td colSpan={9} className="p-6 text-center text-gray-400">
                   {scope === "active"
-                    ? "ยังไม่มีบิลใหม่ในรอบปัจจุบัน (ดูบิลที่ปิดยอดแล้วได้ที่หน้า สรุปรายวัน หรือกดสลับเป็น ประวัติทั้งหมด)"
+                    ? "ยังไม่มีบิลใหม่ในรอบปัจจุบัน (ดูบิลเก่าได้ที่หน้า สรุปรายวัน หรือกดสลับเป็น ประวัติทั้งหมด)"
                     : "ไม่พบบิล"}
                 </td>
               </tr>
@@ -264,14 +359,25 @@ export default function Dashboard() {
                 className="cursor-pointer border-t hover:bg-gold-50/50"
                 onClick={() => setOpen(r)}
               >
-                <td className="p-3">{r.date}</td>
-                <td className="p-3">{r.customer_name}</td>
-                <td className="p-3">{r.phone}</td>
-                <td className="p-3">{[...new Set(r.receipt_items.map((i) => i.metal_type))].join(", ")}</td>
-                <td className="p-3 text-right">{fmtList(r.receipt_items.map((i) => i.plus_price))}</td>
-                <td className="p-3 text-right">{fmtList(r.receipt_items.map((i) => i.buy_percent), "%")}</td>
+                <td className="p-3">
+                  <span
+                    className={`inline-block whitespace-nowrap rounded-full px-2.5 py-0.5 text-[11px] font-medium ${
+                      r.doc_category === "hq"
+                        ? "bg-blue-100 text-blue-800"
+                        : "bg-emerald-100 text-emerald-800"
+                    }`}
+                  >
+                    {DOC_CATEGORY_META[r.doc_category ?? "customer"].badge}
+                  </span>
+                </td>
+                <td className="p-3 whitespace-nowrap">{r.date}</td>
+                <td className="p-3 font-mono text-xs">{r.receipt_no || "-"}</td>
+                <td className="p-3 font-medium">{r.customer_name || "-"}</td>
+                <td className="p-3 font-mono text-xs text-gray-600">{r.tax_id || "-"}</td>
                 <td className="p-3 text-right">{fmt(r.total_weight)}</td>
-                <td className="p-3 text-right font-medium">{fmt(r.grand_total, 3)}</td>
+                <td className="p-3 text-right">{fmt(r.subtotal)}</td>
+                <td className="p-3 text-right text-blue-700">{fmt(r.vat_amount ?? r.other_amount)}</td>
+                <td className="p-3 text-right font-semibold">{fmt(r.grand_total, 2)}</td>
               </tr>
             ))}
           </tbody>
@@ -284,21 +390,21 @@ export default function Dashboard() {
             <div>
               <h3 className="text-base font-bold text-ink">จบวัน: บันทึกปิดยอดและรีเซ็ตหน้าหลัก</h3>
               <p className="mt-1 text-xs text-gray-500">
-                ระบบจะบันทึกสรุปยอดทั้งหมดลงในหน้า <strong>สรุปรายวัน</strong> และล้างหน้าหลักให้เป็น 0 เพื่อเริ่มรอบวันใหม่ (บิลทั้งหมดยังอยู่ครบ ดูย้อนหลังได้ตลอด)
+                ระบบจะบันทึกสรุปยอดทั้ง 2 ฝั่งลงในหน้า <strong>สรุปรายวัน</strong> และล้างหน้าหลักให้เป็น 0 เพื่อเริ่มวันใหม่ (ข้อมูลบิลทั้งหมดยังอยู่ครบ ดูย้อนหลังและออกไฟล์ยื่นภาษีได้ตลอด)
               </p>
             </div>
             <div className="space-y-1 rounded-lg bg-gold-50/70 p-3 text-sm">
               <div>
-                จำนวนบิลที่จะปิดยอด: <strong>{rows.length} บิล</strong>
+                บิลลูกค้า (ซื้อเข้า): <strong>{stats.customer.count} บิล</strong> ({fmt(stats.customer.total)} บาท)
+              </div>
+              <div>
+                ส่งสำนักงานใหญ่ (ใบกำกับภาษี): <strong>{stats.hq.count} บิล</strong> ({fmt(stats.hq.total)} บาท)
               </div>
               {activeDates.length > 0 && (
                 <div>
                   วันที่บิล: <strong>{activeDates.join(", ")}</strong>
                 </div>
               )}
-              <div>
-                ยอดรับซื้อรวม: <strong className="text-gold-600">{fmt(stats.total, 3)} บาท</strong>
-              </div>
             </div>
             <div className="space-y-2.5">
               <label className="block text-xs text-gray-500">
@@ -314,7 +420,7 @@ export default function Dashboard() {
                 หมายเหตุประจำวัน (ไม่บังคับ)
                 <input
                   className="input mt-0.5"
-                  placeholder="เช่น ยอดเงินสดครบ / หมายเหตุเพิ่มเติม"
+                  placeholder="เช่น ยอดเงินสดครบ / ส่งทอง สนง.ใหญ่ เรียบร้อย"
                   value={closeNotes}
                   onChange={(e) => setCloseNotes(e.target.value)}
                 />

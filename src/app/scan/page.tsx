@@ -4,15 +4,24 @@ import { Camera, Upload, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { ImageViewer, ReviewForm } from "@/components/Review";
 import { useToast } from "@/components/Toast";
 import { prepareFile } from "@/lib/image";
+import { DOC_CATEGORY_META, type DocCategory } from "@/lib/tax";
 import type { ReceiptData, ReceiptRow } from "@/lib/types";
 
 interface Job {
-  id: number; name: string; file?: File; url?: string;
-  status: "scanning" | "ready" | "error" | "saved"; data?: ReceiptData; error?: string;
+  id: number;
+  name: string;
+  file?: File;
+  url?: string;
+  status: "scanning" | "ready" | "error" | "saved";
+  data?: ReceiptData;
+  error?: string;
 }
+
+type ScanMode = "auto" | DocCategory;
 
 export default function ScanPage() {
   const toast = useToast();
+  const [mode, setMode] = useState<ScanMode>("auto");
   const [jobs, setJobs] = useState<Job[]>([]);
   const [sel, setSel] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
@@ -23,12 +32,13 @@ export default function ScanPage() {
 
   const patch = (id: number, p: Partial<Job>) => setJobs((js) => js.map((j) => (j.id === id ? { ...j, ...p } : j)));
 
-  async function processOne(id: number, raw: File) {
+  async function processOne(id: number, raw: File, scanMode: ScanMode) {
     try {
       const file = await prepareFile(raw);
       patch(id, { file, url: URL.createObjectURL(file) });
       const fd = new FormData();
       fd.append("file", file);
+      if (scanMode !== "auto") fd.append("doc_category", scanMode);
       const r = await fetch("/api/scan", { method: "POST", body: fd });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error ?? "สแกนไม่สำเร็จ");
@@ -43,16 +53,16 @@ export default function ScanPage() {
   async function handleFiles(list: FileList | File[]) {
     const queue = Array.from(list).map((raw) => ({ id: ++counter.current, raw }));
     if (queue.length === 0) return;
+    const activeMode = mode;
     setJobs((js) => [...js, ...queue.map(({ id, raw }) => ({ id, name: raw.name, status: "scanning" as const }))]);
     setSel((s) => s ?? queue[0].id);
-    // สแกนพร้อมกันสูงสุด 3 ไฟล์แทนการรอทีละไฟล์
     const concurrency = Math.min(3, queue.length);
     let idx = 0;
     await Promise.all(
       Array.from({ length: concurrency }, async () => {
         while (idx < queue.length) {
           const item = queue[idx++];
-          await processOne(item.id, item.raw);
+          await processOne(item.id, item.raw, activeMode);
         }
       })
     );
@@ -67,7 +77,10 @@ export default function ScanPage() {
       if (job.file) fd.append("file", job.file);
       const r = await fetch("/api/receipts", { method: "POST", body: fd });
       const j = await r.json();
-      if (r.status === 409) { setDup({ job, data, existing: j.duplicate }); return; }
+      if (r.status === 409) {
+        setDup({ job, data, existing: j.duplicate });
+        return;
+      }
       if (!r.ok) throw new Error(j.error ?? "บันทึกไม่สำเร็จ");
       patch(job.id, { status: "saved" });
       setDup(null);
@@ -85,42 +98,136 @@ export default function ScanPage() {
 
   return (
     <div className="space-y-4">
-      <div className="card">
+      <div className="card space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="text-xs font-semibold text-gray-600">เลือกประเภทบิลที่จะสแกน:</div>
+          <div className="flex flex-wrap gap-1.5 text-xs">
+            <button
+              type="button"
+              onClick={() => setMode("auto")}
+              className={`rounded-lg border px-3 py-1.5 font-medium transition ${
+                mode === "auto"
+                  ? "border-gold-500 bg-gold-50 text-gold-600"
+                  : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+              }`}
+            >
+              อัตโนมัติ (AI แยกให้เอง)
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("customer")}
+              className={`rounded-lg border px-3 py-1.5 font-medium transition ${
+                mode === "customer"
+                  ? "border-emerald-500 bg-emerald-50 text-emerald-800"
+                  : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+              }`}
+            >
+              ใบเสร็จลูกค้า (ซื้อเข้า)
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode("hq")}
+              className={`rounded-lg border px-3 py-1.5 font-medium transition ${
+                mode === "hq"
+                  ? "border-blue-500 bg-blue-50 text-blue-800"
+                  : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+              }`}
+            >
+              ส่งสำนักงานใหญ่ (ใบกำกับภาษี)
+            </button>
+          </div>
+        </div>
+
         <div
           className="flex flex-col items-center gap-3 rounded-lg border-2 border-dashed border-gold-100 bg-gold-50/40 p-6 text-center"
           onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => { e.preventDefault(); handleFiles(e.dataTransfer.files); }}
+          onDrop={(e) => {
+            e.preventDefault();
+            handleFiles(e.dataTransfer.files);
+          }}
         >
           <p className="text-sm text-gray-600">ถ่ายรูปบิลหรืออัปโหลดไฟล์ (ลากวางได้ รองรับหลายไฟล์ / HEIC / PDF)</p>
           <div className="flex flex-wrap justify-center gap-3">
-            <button className="btn-gold" onClick={() => cam.current?.click()}><Camera size={18} /> ถ่ายรูปบิล</button>
-            <button className="btn-ghost" onClick={() => pick.current?.click()}><Upload size={18} /> อัปโหลดรูป / ไฟล์ PDF</button>
+            <button className="btn-gold" onClick={() => cam.current?.click()}>
+              <Camera size={18} /> ถ่ายรูปบิล
+            </button>
+            <button className="btn-ghost" onClick={() => pick.current?.click()}>
+              <Upload size={18} /> อัปโหลดรูป / ไฟล์ PDF
+            </button>
           </div>
-          <input ref={cam} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { if (e.target.files) handleFiles(e.target.files); e.target.value = ""; }} />
-          <input ref={pick} type="file" multiple accept="image/*,application/pdf,.heic,.heif" className="hidden" onChange={(e) => { if (e.target.files) handleFiles(e.target.files); e.target.value = ""; }} />
+          <input
+            ref={cam}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={(e) => {
+              if (e.target.files) handleFiles(e.target.files);
+              e.target.value = "";
+            }}
+          />
+          <input
+            ref={pick}
+            type="file"
+            multiple
+            accept="image/*,application/pdf,.heic,.heif"
+            className="hidden"
+            onChange={(e) => {
+              if (e.target.files) handleFiles(e.target.files);
+              e.target.value = "";
+            }}
+          />
         </div>
       </div>
 
       {jobs.length > 0 && (
         <div className="flex flex-wrap gap-2">
-          {jobs.map((j) => (
-            <button key={j.id} onClick={() => setSel(j.id)} className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs ${sel === j.id ? "border-gold-500 bg-gold-50" : "bg-white"}`}>
-              {j.status === "scanning" && <Loader2 size={14} className="animate-spin text-gold-500" />}
-              {j.status === "saved" && <CheckCircle2 size={14} className="text-emerald-600" />}
-              {j.status === "error" && <XCircle size={14} className="text-red-600" />}
-              <span className="max-w-[140px] truncate">{j.name}</span>
-            </button>
-          ))}
+          {jobs.map((j) => {
+            const cat = j.data?.doc_category;
+            return (
+              <button
+                key={j.id}
+                onClick={() => setSel(j.id)}
+                className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs ${
+                  sel === j.id ? "border-gold-500 bg-gold-50" : "bg-white"
+                }`}
+              >
+                {j.status === "scanning" && <Loader2 size={14} className="animate-spin text-gold-500" />}
+                {j.status === "saved" && <CheckCircle2 size={14} className="text-emerald-600" />}
+                {j.status === "error" && <XCircle size={14} className="text-red-600" />}
+                {cat && (
+                  <span
+                    className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                      cat === "hq" ? "bg-blue-100 text-blue-800" : "bg-emerald-100 text-emerald-800"
+                    }`}
+                  >
+                    {cat === "hq" ? "สนง.ใหญ่" : "ลูกค้า"}
+                  </span>
+                )}
+                <span className="max-w-[140px] truncate">{j.name}</span>
+              </button>
+            );
+          })}
         </div>
       )}
 
-      {cur?.status === "scanning" && <div className="card flex items-center gap-2 text-sm"><Loader2 className="animate-spin text-gold-500" size={18} /> กำลังอ่านบิลด้วย AI... (ปกติ 3–8 วินาที ห้ามรีเฟรชหน้า)</div>}
+      {cur?.status === "scanning" && (
+        <div className="card flex items-center gap-2 text-sm">
+          <Loader2 className="animate-spin text-gold-500" size={18} /> กำลังอ่านบิลด้วย AI... (ปกติ 3–8 วินาที ห้ามรีเฟรชหน้า)
+        </div>
+      )}
       {cur?.status === "error" && <div className="card text-sm text-red-700">{cur.error}</div>}
       {cur?.status === "saved" && <div className="card text-sm text-emerald-700">บันทึกแล้ว</div>}
       {cur?.status === "ready" && cur.data && (
         <div className="grid gap-4 lg:grid-cols-2">
           {cur.url && <ImageViewer src={cur.url} isPdf={cur.file?.type === "application/pdf"} />}
-          <ReviewForm key={cur.id} initial={cur.data} saving={saving} saveLabel="บันทึกบิล" onSave={(d) => save(cur, d)} />
+          <ReviewForm
+            key={cur.id}
+            initial={cur.data}
+            saving={saving}
+            saveLabel={`บันทึก (${DOC_CATEGORY_META[cur.data.doc_category ?? "customer"].badge})`}
+            onSave={(d) => save(cur, d)}
+          />
         </div>
       )}
 
@@ -130,7 +237,7 @@ export default function ScanPage() {
             <h3 className="font-semibold text-yellow-700">พบบิลที่ข้อมูลตรงกันในระบบ</h3>
             <div className="rounded-lg bg-gray-50 p-3 text-sm">
               <div>วันที่: {dup.existing.date}</div>
-              <div>ลูกค้า: {dup.existing.customer_name}</div>
+              <div>ลูกค้า / ผู้ขาย: {dup.existing.customer_name || "-"}</div>
               <div>ยอดรวม: {dup.existing.grand_total?.toLocaleString("th-TH", { maximumFractionDigits: 3 })} บาท</div>
               <div>บันทึกเมื่อ: {new Date(dup.existing.created_at).toLocaleString("th-TH")}</div>
             </div>
@@ -148,7 +255,9 @@ export default function ScanPage() {
               >
                 ไม่บันทึก (ลบทิ้ง)
               </button>
-              <button className="btn-gold" onClick={() => save(dup.job, dup.data, true)}>ยืนยันบันทึกซ้ำ</button>
+              <button className="btn-gold" onClick={() => save(dup.job, dup.data, true)}>
+                ยืนยันบันทึกซ้ำ
+              </button>
             </div>
           </div>
         </div>

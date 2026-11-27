@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { admin, BUCKET } from "@/lib/supabase";
+import { classifyDocCategory, DOC_CATEGORY_META, packTaxNotes } from "@/lib/tax";
 import type { ReceiptData } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -7,19 +8,30 @@ export const runtime = "nodejs";
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const data = (await req.json()) as ReceiptData;
+  const cat = classifyDocCategory(data.doc_type, data.doc_category);
+  const packedNotes = packTaxNotes({
+    receipt_no: data.receipt_no,
+    tax_id: data.tax_id,
+    address: data.address,
+    redemption_price: data.redemption_price,
+    tax_base: data.tax_base,
+    vat_amount: data.vat_amount ?? data.other_amount,
+    note_text: data.notes,
+  });
+
   const head = {
-    doc_type: data.doc_type?.trim() || "ใบรับสินค้า / ใบเสร็จรับเงิน",
+    doc_type: DOC_CATEGORY_META[cat].docType,
     date: data.date ?? null,
     customer_name: data.customer_name ?? null,
     phone: data.phone ?? null,
     total_weight: data.total_weight ?? null,
     subtotal: data.subtotal ?? null,
-    other_amount: data.other_amount ?? null,
+    other_amount: data.vat_amount ?? data.other_amount ?? null,
     grand_total: data.grand_total ?? null,
     payment_method: data.payment_method ?? null,
     payment_detail: data.payment_detail ?? null,
     buyer_name: data.buyer_name ?? null,
-    notes: data.notes ?? null,
+    notes: packedNotes,
   };
   const db = admin();
   const { error } = await db.from("receipts").update(head).eq("id", id);

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import { RESPONSE_SCHEMA, SYSTEM_PROMPT } from "@/lib/prompt";
+import { classifyDocCategory, DOC_CATEGORY_META } from "@/lib/tax";
 import { classifyMetal } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -15,11 +16,9 @@ function getAi(apiKey: string) {
 }
 
 function thinkingLevelFor(model: string) {
-  // flash-lite รองรับ MINIMAL ทำให้ตัดเวลาคิดและตอบเร็วขึ้นมาก ส่วนรุ่นอื่นใช้ LOW
   return /flash-lite/i.test(model) ? ThinkingLevel.MINIMAL : ThinkingLevel.LOW;
 }
 
-/** 503/429/500/504 ถือเป็นปัญหาชั่วคราวของ Google: ลองซ้ำโมเดลละ 2 ครั้ง แล้วสลับไปโมเดลสำรองอัตโนมัติ */
 function isTransient(e: unknown) {
   const m = e instanceof Error ? e.message : String(e);
   return /"code":\s*(429|500|503|504)|UNAVAILABLE|RESOURCE_EXHAUSTED|overloaded|high demand|timeout|timed out|aborted|DEADLINE_EXCEEDED/i.test(m);
@@ -58,6 +57,7 @@ export async function POST(req: NextRequest) {
 
   const form = await req.formData();
   const file = form.get("file");
+  const modeOverride = String(form.get("doc_category") ?? "").trim();
   if (!(file instanceof File)) return NextResponse.json({ error: "ไม่พบไฟล์" }, { status: 400 });
 
   const bytes = Buffer.from(await file.arrayBuffer()).toString("base64");
@@ -67,14 +67,19 @@ export async function POST(req: NextRequest) {
       ai.models.generateContent({
         model,
         contents: [
-          { role: "user", parts: [{ inlineData: { mimeType: file.type || "image/jpeg", data: bytes } }, { text: "อ่านใบรับซื้อนี้" }] },
+          {
+            role: "user",
+            parts: [
+              { inlineData: { mimeType: file.type || "image/jpeg", data: bytes } },
+              { text: "อ่านข้อมูลบิลใบนี้เพื่อลงบัญชีและยื่นภาษี" },
+            ],
+          },
         ],
         config: {
           systemInstruction: SYSTEM_PROMPT,
           responseMimeType: "application/json",
           responseSchema: RESPONSE_SCHEMA,
           thinkingConfig: { thinkingLevel: thinkingLevelFor(model) },
-          // ตัดรอบที่ 20 วินาทีเพื่อสลับโมเดลสำรองเร็วขึ้นแทนการรอค้าง
           httpOptions: { timeout: 20000 },
         },
       });
@@ -85,12 +90,25 @@ export async function POST(req: NextRequest) {
     );
     const resp = await runWithFallback(models, call);
     const data = JSON.parse(resp.text ?? "{}");
+
+    const cat = classifyDocCategory(
+      data.doc_type,
+      modeOverride === "customer" || modeOverride === "hq" ? modeOverride : data.doc_category
+    );
+    data.doc_category = cat;
+    data.doc_type = DOC_CATEGORY_META[cat].docType;
+
+    // ป้องกัน AI เผลอดึงเลขผู้เสียภาษีของบริษัทเองมาใส่
+    if (typeof data.tax_id === "string" && data.tax_id.replace(/\D/g, "") === "0165569002269") {
+      data.tax_id = null;
+    }
+
     data.items = (data.items ?? []).map((i: Record<string, unknown>, idx: number) => ({
       no: idx + 1,
       ...i,
       metal_type: i.metal_type ?? classifyMetal(i.item_name as string),
     }));
-    // บิลแบบใหม่ไม่มีช่องน้ำหนักรวมแยก ให้รวมจากน้ำหนักแต่ละรายการอัตโนมัติ
+
     if (data.total_weight == null && data.items.length > 0) {
       const weights = data.items
         .map((i: Record<string, unknown>) => i.weight)
@@ -99,7 +117,12 @@ export async function POST(req: NextRequest) {
         data.total_weight = Number(weights.reduce((a: number, b: number) => a + b, 0).toFixed(3));
       }
     }
+
+    if (data.vat_amount != null && data.other_amount == null) data.other_amount = data.vat_amount;
     if (data.phone != null) data.phone = String(data.phone);
+    if (data.receipt_no != null) data.receipt_no = String(data.receipt_no);
+    if (data.tax_id != null) data.tax_id = String(data.tax_id);
+
     return NextResponse.json(data);
   } catch (e) {
     console.error("[scan] Gemini error:", e);

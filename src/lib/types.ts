@@ -1,3 +1,5 @@
+import type { DocCategory } from "./tax";
+
 export const METALS = ["ทอง", "เงิน", "นาค", "อื่นๆ"] as const;
 export type Metal = (typeof METALS)[number];
 
@@ -14,12 +16,19 @@ export interface ReceiptItem {
 }
 
 export interface ReceiptData {
+  doc_category?: DocCategory;
   doc_type?: string | null;
+  receipt_no?: string | null;
   date: string | null;
   customer_name: string | null;
+  tax_id?: string | null;
+  address?: string | null;
   phone: string | null;
   total_weight: number | null;
   subtotal: number | null;
+  redemption_price?: number | null;
+  tax_base?: number | null;
+  vat_amount?: number | null;
   other_amount: number | null;
   grand_total: number | null;
   payment_method: string | null;
@@ -32,8 +41,9 @@ export interface ReceiptData {
 export interface ReceiptRow extends Omit<ReceiptData, "items"> {
   id: string;
   created_at: string;
+  doc_category?: DocCategory;
   image_url: string | null;
-  receipt_items: ReceiptItem[];
+  receipt_items: (ReceiptItem & { id?: string })[];
 }
 
 export function classifyMetal(name: string | null | undefined): Metal {

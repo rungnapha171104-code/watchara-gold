@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { admin, BUCKET } from "@/lib/supabase";
 import { filtersFrom, queryReceipts } from "@/lib/query";
+import { classifyDocCategory, DOC_CATEGORY_META, packTaxNotes, unpackTaxNotes } from "@/lib/tax";
 import type { ReceiptData } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -8,6 +9,7 @@ export const dynamic = "force-dynamic";
 
 const normName = (s: string | null | undefined) => (s ?? "").replace(/\s+/g, " ").trim().toLowerCase();
 const normPhone = (s: string | null | undefined) => (s ?? "").replace(/\D/g, "");
+const normNo = (s: string | null | undefined) => (s ?? "").trim().toLowerCase();
 
 export async function GET(req: NextRequest) {
   try {
@@ -26,6 +28,9 @@ export async function POST(req: NextRequest) {
   const file = form.get("file");
   const db = admin();
 
+  const cat = classifyDocCategory(data.doc_type, data.doc_category);
+  const docType = DOC_CATEGORY_META[cat].docType;
+
   if (!force && data.date && data.grand_total != null) {
     const { data: candidates } = await db
       .from("receipts")
@@ -34,11 +39,16 @@ export async function POST(req: NextRequest) {
       .eq("grand_total", data.grand_total);
     const targetName = normName(data.customer_name);
     const targetPhone = normPhone(data.phone);
-    const dup = (candidates ?? []).find(
-      (c) =>
-        (targetName && normName(c.customer_name) === targetName) ||
-        (targetPhone && normPhone(c.phone) === targetPhone)
-    );
+    const targetNo = normNo(data.receipt_no);
+    const dup = (candidates ?? []).find((c) => {
+      const cCat = classifyDocCategory(c.doc_type);
+      if (cCat !== cat) return false;
+      const meta = unpackTaxNotes(c.notes, c.other_amount);
+      if (targetNo && normNo(meta.receipt_no) === targetNo) return true;
+      if (targetName && normName(c.customer_name) === targetName) return true;
+      if (targetPhone && normPhone(c.phone) === targetPhone) return true;
+      return false;
+    });
     if (dup) return NextResponse.json({ duplicate: dup }, { status: 409 });
   }
 
@@ -46,23 +56,35 @@ export async function POST(req: NextRequest) {
   if (file instanceof File && file.size > 0) {
     const ext = file.type === "application/pdf" ? "pdf" : "jpg";
     path = `${new Date().toISOString().slice(0, 7)}/${crypto.randomUUID()}.${ext}`;
-    const { error } = await db.storage.from(BUCKET).upload(path, Buffer.from(await file.arrayBuffer()), { contentType: file.type || "image/jpeg" });
+    const { error } = await db.storage.from(BUCKET).upload(path, Buffer.from(await file.arrayBuffer()), {
+      contentType: file.type || "image/jpeg",
+    });
     if (error) return NextResponse.json({ error: "อัปโหลดไฟล์ไม่สำเร็จ: " + error.message }, { status: 500 });
   }
 
+  const packedNotes = packTaxNotes({
+    receipt_no: data.receipt_no,
+    tax_id: data.tax_id,
+    address: data.address,
+    redemption_price: data.redemption_price,
+    tax_base: data.tax_base,
+    vat_amount: data.vat_amount ?? data.other_amount,
+    note_text: data.notes,
+  });
+
   const head = {
-    doc_type: data.doc_type?.trim() || "ใบรับสินค้า / ใบเสร็จรับเงิน",
+    doc_type: docType,
     date: data.date ?? null,
     customer_name: data.customer_name ?? null,
     phone: data.phone ?? null,
     total_weight: data.total_weight ?? null,
     subtotal: data.subtotal ?? null,
-    other_amount: data.other_amount ?? null,
+    other_amount: data.vat_amount ?? data.other_amount ?? null,
     grand_total: data.grand_total ?? null,
     payment_method: data.payment_method ?? null,
     payment_detail: data.payment_detail ?? null,
     buyer_name: data.buyer_name ?? null,
-    notes: data.notes ?? null,
+    notes: packedNotes,
     image_url: path,
   };
   const { data: rec, error } = await db.from("receipts").insert(head).select("id").single();

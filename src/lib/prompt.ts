@@ -35,9 +35,10 @@ export const SYSTEM_PROMPT = `คุณคือผู้ช่วยอ่า�
   * รายการ = item_name (เช่น "ทองรูปพรรณเก่า 96.5%")
   * น้ำหนักทอง (กรัม) หรือ น้ำหนัก (กรัม) หรือ จำนวน = weight
   * ราคา/หน่วย = base_price
+  * ราคาบวก (ราคาตัวบวกของทอง/เงิน/ฯลฯ ถ้ามีเขียนไว้ในบิล) = plus_price (ห้ามนำ plus_price ไปบวกเพิ่มใน subtotal หรือ grand_total)
   * จำนวนเงิน = amount
-  * ช่อง plus_price, buy_percent, price_per_gram ส่ง null ถ้าบิลไม่มีคอลัมน์นั้น
-- metal_type: มีคำว่า "ทอง" → "ทอง", "เงิน" → "เงิน", "นาค" → "นาค", อื่นๆ → "อื่นๆ"
+  * ช่อง buy_percent, price_per_gram ส่ง null ถ้าบิลไม่มีคอลัมน์นั้น
+- metal_type: มีคำว่า "แพลตตินัม" / "แพลทินัม" / "Platinum" / "Pt" → "แพลตตินัม", "ทอง" → "ทอง", "เงิน" → "เงิน", "นาค" → "นาค", อื่นๆ → "อื่นๆ"
 
 ส่วนสรุปภาษีท้ายบิล (มุมล่างขวา)
 - subtotal: "รวมเงิน (ไม่รวมภาษีมูลค่าเพิ่ม) / Sub Total"
@@ -84,7 +85,7 @@ export const RESPONSE_SCHEMA = {
         type: Type.OBJECT,
         properties: {
           no: num,
-          metal_type: { type: Type.STRING, enum: ["ทอง", "เงิน", "นาค", "อื่นๆ"] },
+          metal_type: { type: Type.STRING, enum: ["ทอง", "เงิน", "นาค", "แพลตตินัม", "อื่นๆ"] },
           item_name: str,
           base_price: num,
           plus_price: num,

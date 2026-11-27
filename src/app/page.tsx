@@ -5,10 +5,23 @@ import { Building2, CalendarCheck, Download, FileSpreadsheet, RotateCcw, Search,
 import { ImageViewer, ReviewForm } from "@/components/Review";
 import { useToast } from "@/components/Toast";
 import { DOC_CATEGORY_META, type DocCategory } from "@/lib/tax";
-import type { ReceiptData, ReceiptRow } from "@/lib/types";
+import { METALS, type Metal, type ReceiptData, type ReceiptRow } from "@/lib/types";
 
 const fmt = (n: number | null | undefined, d = 2) =>
   n == null ? "-" : n.toLocaleString("th-TH", { maximumFractionDigits: d });
+
+const fmtPlus = (vals: (number | null | undefined)[]) => {
+  const uniq = [...new Set(vals.filter((v): v is number => v != null))];
+  return uniq.length ? uniq.map((v) => (v > 0 ? `+${fmt(v)}` : fmt(v))).join(", ") : "-";
+};
+
+const METAL_BADGE: Record<Metal, string> = {
+  ทอง: "bg-amber-100 text-amber-900",
+  เงิน: "bg-slate-200 text-slate-800",
+  นาค: "bg-rose-100 text-rose-800",
+  แพลตตินัม: "bg-indigo-100 text-indigo-800",
+  อื่นๆ: "bg-gray-100 text-gray-700",
+};
 
 export default function Dashboard() {
   const toast = useToast();
@@ -19,6 +32,7 @@ export default function Dashboard() {
   const [q, setQ] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [metal, setMetal] = useState("");
   const [open, setOpen] = useState<ReceiptRow | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -34,8 +48,9 @@ export default function Dashboard() {
     if (q) p.set("q", q);
     if (from) p.set("from", from);
     if (to) p.set("to", to);
+    if (metal) p.set("metal", metal);
     return p;
-  }, [scope, category, q, from, to]);
+  }, [scope, category, q, from, to, metal]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -119,6 +134,7 @@ export default function Dashboard() {
       setQ("");
       setFrom("");
       setTo("");
+      setMetal("");
       setCategory("all");
       setScope("active");
       await load();
@@ -140,6 +156,7 @@ export default function Dashboard() {
       if (from) p.set("from", from);
       if (to) p.set("to", to);
       if (q) p.set("q", q);
+      if (metal) p.set("metal", metal);
     }
     return `/api/export?${p.toString()}`;
   };
@@ -295,6 +312,17 @@ export default function Dashboard() {
           ถึง
           <input type="date" className="input mt-0.5" value={to} onChange={(e) => setTo(e.target.value)} />
         </label>
+        <label className="text-xs text-gray-500">
+          โลหะ
+          <select className="input mt-0.5" value={metal} onChange={(e) => setMetal(e.target.value)}>
+            <option value="">ทั้งหมด</option>
+            {METALS.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
       <div className="card flex flex-wrap items-center gap-2">
@@ -322,14 +350,15 @@ export default function Dashboard() {
       </div>
 
       <div className="card overflow-x-auto p-0">
-        <table className="w-full min-w-[900px] text-sm">
+        <table className="w-full min-w-[1060px] text-sm">
           <thead className="bg-gold-50 text-left text-xs text-gray-600">
             <tr>
               <th className="p-3">ประเภท</th>
               <th className="p-3">วันที่</th>
               <th className="p-3">เลขที่บิล</th>
               <th className="p-3">ลูกค้า / ผู้ขาย</th>
-              <th className="p-3">เลขผู้เสียภาษี</th>
+              <th className="p-3">โลหะ</th>
+              <th className="p-3 text-right">ราคาบวก</th>
               <th className="p-3 text-right">น้ำหนัก (ก.)</th>
               <th className="p-3 text-right">ก่อน VAT</th>
               <th className="p-3 text-right">VAT 7%</th>
@@ -339,47 +368,71 @@ export default function Dashboard() {
           <tbody>
             {loading && (
               <tr>
-                <td colSpan={9} className="p-6 text-center text-gray-400">
+                <td colSpan={10} className="p-6 text-center text-gray-400">
                   กำลังโหลด...
                 </td>
               </tr>
             )}
             {!loading && rows.length === 0 && (
               <tr>
-                <td colSpan={9} className="p-6 text-center text-gray-400">
+                <td colSpan={10} className="p-6 text-center text-gray-400">
                   {scope === "active"
                     ? "ยังไม่มีบิลใหม่ในรอบปัจจุบัน (ดูบิลเก่าได้ที่หน้า สรุปรายวัน หรือกดสลับเป็น ประวัติทั้งหมด)"
                     : "ไม่พบบิล"}
                 </td>
               </tr>
             )}
-            {rows.map((r) => (
-              <tr
-                key={r.id}
-                className="cursor-pointer border-t hover:bg-gold-50/50"
-                onClick={() => setOpen(r)}
-              >
-                <td className="p-3">
-                  <span
-                    className={`inline-block whitespace-nowrap rounded-full px-2.5 py-0.5 text-[11px] font-medium ${
-                      r.doc_category === "hq"
-                        ? "bg-blue-100 text-blue-800"
-                        : "bg-emerald-100 text-emerald-800"
-                    }`}
-                  >
-                    {DOC_CATEGORY_META[r.doc_category ?? "customer"].badge}
-                  </span>
-                </td>
-                <td className="p-3 whitespace-nowrap">{r.date}</td>
-                <td className="p-3 font-mono text-xs">{r.receipt_no || "-"}</td>
-                <td className="p-3 font-medium">{r.customer_name || "-"}</td>
-                <td className="p-3 font-mono text-xs text-gray-600">{r.tax_id || "-"}</td>
-                <td className="p-3 text-right">{fmt(r.total_weight)}</td>
-                <td className="p-3 text-right">{fmt(r.subtotal)}</td>
-                <td className="p-3 text-right text-blue-700">{fmt(r.vat_amount ?? r.other_amount)}</td>
-                <td className="p-3 text-right font-semibold">{fmt(r.grand_total, 2)}</td>
-              </tr>
-            ))}
+            {rows.map((r) => {
+              const metals = [...new Set(r.receipt_items.map((i) => i.metal_type))];
+              return (
+                <tr
+                  key={r.id}
+                  className="cursor-pointer border-t hover:bg-gold-50/50"
+                  onClick={() => setOpen(r)}
+                >
+                  <td className="p-3">
+                    <span
+                      className={`inline-block whitespace-nowrap rounded-full px-2.5 py-0.5 text-[11px] font-medium ${
+                        r.doc_category === "hq"
+                          ? "bg-blue-100 text-blue-800"
+                          : "bg-emerald-100 text-emerald-800"
+                      }`}
+                    >
+                      {DOC_CATEGORY_META[r.doc_category ?? "customer"].badge}
+                    </span>
+                  </td>
+                  <td className="p-3 whitespace-nowrap">{r.date}</td>
+                  <td className="p-3 font-mono text-xs">{r.receipt_no || "-"}</td>
+                  <td className="p-3">
+                    <div className="font-medium">{r.customer_name || "-"}</div>
+                    {r.tax_id && <div className="font-mono text-[11px] text-gray-500">Tax: {r.tax_id}</div>}
+                  </td>
+                  <td className="p-3">
+                    <div className="flex flex-wrap gap-1">
+                      {metals.length ? (
+                        metals.map((m) => (
+                          <span
+                            key={m}
+                            className={`inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-[11px] font-medium ${METAL_BADGE[m] ?? METAL_BADGE.อื่นๆ}`}
+                          >
+                            {m}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-gray-400">-</span>
+                      )}
+                    </div>
+                  </td>
+                  <td className="p-3 text-right text-xs text-gray-600">
+                    {fmtPlus(r.receipt_items.map((i) => i.plus_price))}
+                  </td>
+                  <td className="p-3 text-right">{fmt(r.total_weight)}</td>
+                  <td className="p-3 text-right">{fmt(r.subtotal)}</td>
+                  <td className="p-3 text-right text-blue-700">{fmt(r.vat_amount ?? r.other_amount)}</td>
+                  <td className="p-3 text-right font-semibold">{fmt(r.grand_total, 2)}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

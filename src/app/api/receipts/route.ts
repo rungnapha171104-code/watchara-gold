@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { admin, BUCKET } from "@/lib/supabase";
 import { filtersFrom, queryReceipts } from "@/lib/query";
 import { classifyDocCategory, DOC_CATEGORY_META, packTaxNotes, unpackTaxNotes } from "@/lib/tax";
-import type { ReceiptData } from "@/lib/types";
+import { classifyMetal, type ReceiptData } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -94,18 +94,24 @@ export async function POST(req: NextRequest) {
   }
   const items = data.items ?? [];
   if (items.length) {
-    const rows = items.map((i, idx) => ({
-      receipt_id: rec.id,
-      no: i.no ?? idx + 1,
-      metal_type: i.metal_type || "อื่นๆ",
-      item_name: i.item_name ?? null,
-      base_price: i.base_price ?? null,
-      plus_price: i.plus_price ?? null,
-      buy_percent: i.buy_percent ?? null,
-      weight: i.weight ?? null,
-      price_per_gram: i.price_per_gram ?? null,
-      amount: i.amount ?? null,
-    }));
+    const rows = items.map((i, idx) => {
+      const isPt = i.metal_type === "แพลตตินัม";
+      const rawName = i.item_name ?? null;
+      const itemName = isPt && classifyMetal(rawName) !== "แพลตตินัม" ? (rawName ? `แพลตตินัม (${rawName})` : "แพลตตินัม") : rawName;
+      return {
+        receipt_id: rec.id,
+        no: i.no ?? idx + 1,
+        // แปลงแพลตตินัมเป็น 'อื่นๆ' เพื่อผ่าน check constraint เดิมใน DB แล้ว hydrate กลับมาเป็น 'แพลตตินัม' ตอนอ่าน
+        metal_type: isPt ? "อื่นๆ" : i.metal_type || "อื่นๆ",
+        item_name: itemName,
+        base_price: i.base_price ?? null,
+        plus_price: i.plus_price ?? null,
+        buy_percent: i.buy_percent ?? null,
+        weight: i.weight ?? null,
+        price_per_gram: i.price_per_gram ?? null,
+        amount: i.amount ?? null,
+      };
+    });
     const { error: e2 } = await db.from("receipt_items").insert(rows);
     if (e2) {
       await db.from("receipts").delete().eq("id", rec.id);

@@ -17,6 +17,7 @@ export function emptyMetals(): Record<Metal, DailyMetalSummary> {
     ทอง: { weight: 0, amount: 0 },
     เงิน: { weight: 0, amount: 0 },
     นาค: { weight: 0, amount: 0 },
+    แพลตตินัม: { weight: 0, amount: 0 },
     อื่นๆ: { weight: 0, amount: 0 },
   };
 }

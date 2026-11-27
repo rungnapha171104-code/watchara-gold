@@ -23,7 +23,7 @@ create table if not exists receipt_items (
   id uuid primary key default gen_random_uuid(),
   receipt_id uuid not null references receipts(id) on delete cascade,
   no int,
-  metal_type text not null check (metal_type in ('ทอง','เงิน','นาค','อื่นๆ')),
+  metal_type text not null check (metal_type in ('ทอง','เงิน','นาค','แพลตตินัม','อื่นๆ')),
   item_name text,
   base_price numeric,
   plus_price numeric,

@@ -181,8 +181,11 @@ export function ReviewForm({
       </div>
 
       <div className="card space-y-2">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold">รายการสินค้า</h3>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-semibold">รายการสินค้า</h3>
+            <p className="text-[11px] text-gray-500">ช่อง &quot;ราคาบวก&quot; ใช้บันทึกตัวบวกของทอง/เงินตามบิล (ไม่นำไปบวกรวมกับยอดท้ายบิล)</p>
+          </div>
           <button
             type="button"
             className="btn-ghost !px-2.5 !py-1 text-xs"
@@ -192,10 +195,10 @@ export function ReviewForm({
           </button>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[540px] text-xs">
+          <table className="w-full min-w-[640px] text-xs">
             <thead className="text-gray-500">
               <tr>
-                {["#", "โลหะ", "รายการ", "น้ำหนัก (ก.)", "ราคา/หน่วย", "จำนวนเงิน", ""].map((h) => (
+                {["#", "โลหะ", "รายการ", "น้ำหนัก (ก.)", "ราคา/หน่วย", "ราคาบวก", "จำนวนเงิน", ""].map((h) => (
                   <th key={h} className="px-1 py-1 text-left font-medium">
                     {h}
                   </th>
@@ -206,7 +209,7 @@ export function ReviewForm({
               {d.items.map((it, i) => (
                 <tr key={i} className="border-t">
                   <td className="w-8 px-1 py-1 text-gray-400">{i + 1}</td>
-                  <td className="w-20 px-1 py-1">
+                  <td className="w-24 px-1 py-1">
                     <select
                       className="input !px-1 !py-1 text-xs"
                       value={it.metal_type}
@@ -226,11 +229,12 @@ export function ReviewForm({
                       onChange={(e) => setItem(i, "item_name", e.target.value || null)}
                     />
                   </td>
-                  {(["weight", "base_price", "amount"] as const).map((k) => (
+                  {(["weight", "base_price", "plus_price", "amount"] as const).map((k) => (
                     <td key={k} className="w-24 px-1 py-1">
                       <input
                         type="number"
                         step="any"
+                        placeholder={k === "plus_price" ? "+/-" : undefined}
                         className="input !px-1.5 !py-1 text-right text-xs"
                         value={it[k] ?? ""}
                         onChange={(e) => setItem(i, k, numVal(e.target.value))}

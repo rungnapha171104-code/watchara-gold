@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { admin, BUCKET } from "@/lib/supabase";
 import { classifyDocCategory, DOC_CATEGORY_META, packTaxNotes } from "@/lib/tax";
-import type { ReceiptData } from "@/lib/types";
+import { classifyMetal, type ReceiptData } from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -39,18 +39,23 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   await db.from("receipt_items").delete().eq("receipt_id", id);
   const items = data.items ?? [];
   if (items.length) {
-    const rows = items.map((i, idx) => ({
-      receipt_id: id,
-      no: i.no ?? idx + 1,
-      metal_type: i.metal_type || "อื่นๆ",
-      item_name: i.item_name ?? null,
-      base_price: i.base_price ?? null,
-      plus_price: i.plus_price ?? null,
-      buy_percent: i.buy_percent ?? null,
-      weight: i.weight ?? null,
-      price_per_gram: i.price_per_gram ?? null,
-      amount: i.amount ?? null,
-    }));
+    const rows = items.map((i, idx) => {
+      const isPt = i.metal_type === "แพลตตินัม";
+      const rawName = i.item_name ?? null;
+      const itemName = isPt && classifyMetal(rawName) !== "แพลตตินัม" ? (rawName ? `แพลตตินัม (${rawName})` : "แพลตตินัม") : rawName;
+      return {
+        receipt_id: id,
+        no: i.no ?? idx + 1,
+        metal_type: isPt ? "อื่นๆ" : i.metal_type || "อื่นๆ",
+        item_name: itemName,
+        base_price: i.base_price ?? null,
+        plus_price: i.plus_price ?? null,
+        buy_percent: i.buy_percent ?? null,
+        weight: i.weight ?? null,
+        price_per_gram: i.price_per_gram ?? null,
+        amount: i.amount ?? null,
+      };
+    });
     const { error: e2 } = await db.from("receipt_items").insert(rows);
     if (e2) return NextResponse.json({ error: e2.message }, { status: 500 });
   }

@@ -1,6 +1,6 @@
 import type { DocCategory } from "./tax";
 
-export const METALS = ["ทอง", "เงิน", "นาค", "อื่นๆ"] as const;
+export const METALS = ["ทอง", "เงิน", "นาค", "แพลตตินัม", "อื่นๆ"] as const;
 export type Metal = (typeof METALS)[number];
 
 export interface ReceiptItem {
@@ -48,6 +48,7 @@ export interface ReceiptRow extends Omit<ReceiptData, "items"> {
 
 export function classifyMetal(name: string | null | undefined): Metal {
   const n = name ?? "";
+  if (/แพลตตินัม|แพลทินัม|platinum|\bpt\d*\b/i.test(n)) return "แพลตตินัม";
   if (n.includes("นาค")) return "นาค";
   if (n.includes("เงิน")) return "เงิน";
   if (n.includes("ทอง")) return "ทอง";

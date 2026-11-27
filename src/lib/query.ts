@@ -1,7 +1,7 @@
 import { admin } from "./supabase";
 import { getClosedReceiptIds } from "./daily";
 import { classifyDocCategory, unpackTaxNotes } from "./tax";
-import type { ReceiptRow } from "./types";
+import { classifyMetal, type ReceiptRow } from "./types";
 
 export interface Filters {
   q?: string | null;
@@ -26,6 +26,13 @@ export function filtersFrom(sp: URLSearchParams): Filters {
 export function hydrateReceipt(raw: Record<string, unknown>): ReceiptRow {
   const r = raw as unknown as ReceiptRow;
   const meta = unpackTaxNotes(r.notes, r.other_amount);
+  const items = (r.receipt_items ?? []).map((i) => ({
+    ...i,
+    metal_type:
+      i.metal_type === "อื่นๆ" && classifyMetal(i.item_name) === "แพลตตินัม"
+        ? ("แพลตตินัม" as const)
+        : i.metal_type,
+  }));
   return {
     ...r,
     doc_category: classifyDocCategory(r.doc_type),
@@ -36,6 +43,7 @@ export function hydrateReceipt(raw: Record<string, unknown>): ReceiptRow {
     tax_base: meta.tax_base,
     vat_amount: meta.vat_amount,
     notes: meta.note_text,
+    receipt_items: items,
   };
 }
 

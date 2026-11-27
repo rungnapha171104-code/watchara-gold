@@ -32,8 +32,10 @@ export function taxCsv(receipts: ReceiptRow[]): string {
       "ชื่อลูกค้า/ผู้ขาย",
       "เลขประจำตัวผู้เสียภาษี",
       "ที่อยู่",
+      "ประเภทโลหะ",
       "รายการสินค้า",
-      "น้ำหนักทอง(กรัม)",
+      "ราคาบวก(อ้างอิง)",
+      "น้ำหนัก(กรัม)",
       "รวมเงิน(ก่อน VAT)",
       "หักราคาทองรูปพรรณซื้อคืน",
       "ส่วนต่างฐานภาษี",
@@ -47,6 +49,8 @@ export function taxCsv(receipts: ReceiptRow[]): string {
   ];
   receipts.forEach((r, idx) => {
     const cat = r.doc_category ?? "customer";
+    const metals = [...new Set(r.receipt_items.map((i) => i.metal_type))].join(", ");
+    const plusPrices = [...new Set(r.receipt_items.map((i) => i.plus_price).filter((v) => v != null))].join(", ");
     const itemDesc = r.receipt_items
       .map((i) => i.item_name || i.metal_type)
       .filter(Boolean)
@@ -60,7 +64,9 @@ export function taxCsv(receipts: ReceiptRow[]): string {
       r.customer_name,
       phoneCell(r.tax_id),
       r.address,
+      metals,
       itemDesc,
+      plusPrices,
       r.total_weight,
       r.subtotal,
       r.redemption_price,
